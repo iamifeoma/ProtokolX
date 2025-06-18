@@ -132,3 +132,62 @@
     (var-set contract-owner new-owner)
     (print {type: "ownership-transfer", from: current-owner, to: new-owner})
     (ok true)))
+
+;; Increase allowance for spender
+(define-public (increase-allowance (spender principal) (amount uint))
+  (let ((owner tx-sender)
+        (current-allowance (default-to u0 (map-get? allowances {owner: owner, spender: spender}))))
+    
+    (asserts! (not (is-eq owner spender)) ERR_UNAUTHORIZED)
+    (asserts! (> amount u0) ERR_INVALID_AMOUNT)
+    
+    ;; Increase allowance
+    (map-set allowances {owner: owner, spender: spender} (+ current-allowance amount))
+    
+    ;; Emit approval event
+    (print {type: "approval", owner: owner, spender: spender, amount: (+ current-allowance amount)})
+    (ok true)))
+
+;; Decrease allowance for spender
+(define-public (decrease-allowance (spender principal) (amount uint))
+  (let ((owner tx-sender)
+        (current-allowance (default-to u0 (map-get? allowances {owner: owner, spender: spender}))))
+    
+    (asserts! (not (is-eq owner spender)) ERR_UNAUTHORIZED)
+    (asserts! (> amount u0) ERR_INVALID_AMOUNT)
+    (asserts! (>= current-allowance amount) ERR_INSUFFICIENT_ALLOWANCE)
+    
+    ;; Decrease allowance
+    (map-set allowances {owner: owner, spender: spender} (- current-allowance amount))
+    
+    ;; Emit approval event
+    (print {type: "approval", owner: owner, spender: spender, amount: (- current-allowance amount)})
+    (ok true)))
+
+;; Batch transfer to multiple recipients
+(define-public (batch-transfer (recipients (list 50 {recipient: principal, amount: uint})))
+  (let ((sender tx-sender)
+        (sender-balance (default-to u0 (map-get? balances sender)))
+        (total-amount (fold + (map get-amount recipients) u0)))
+    
+    (asserts! (> (len recipients) u0) ERR_INVALID_AMOUNT)
+    (asserts! (>= sender-balance total-amount) ERR_INSUFFICIENT_BALANCE)
+    
+    ;; Execute transfers
+    (map-set balances sender (- sender-balance total-amount))
+    (map execute-transfer recipients)
+    
+    ;; Emit batch transfer event
+    (print {type: "batch-transfer", from: sender, recipients: recipients, total-amount: total-amount})
+    (ok true)))
+
+;; Helper function to get amount from recipient tuple
+(define-private (get-amount (recipient {recipient: principal, amount: uint}))
+  (get amount recipient))
+
+;; Helper function to execute individual transfer in batch
+(define-private (execute-transfer (recipient-data {recipient: principal, amount: uint}))
+  (let ((recipient (get recipient recipient-data))
+        (amount (get amount recipient-data)))
+    (map-set balances recipient (+ (default-to u0 (map-get? balances recipient)) amount))
+    true))
